@@ -61,18 +61,14 @@ namespace llama_server {
 
 		sampler_->set(gen_config, chat_params);
 
-		streamer_->clear();
-		std::string response;
-
 		llama_token next_token = sampler_->apply();
 		if (llama_vocab_is_eog(context_->get_vocab(), next_token)) {
 			log_info("End of generation");
 			return;
 		}
 
-		std::string bytes = tokenizer_->detokenize(next_token);
-		if (gen_config.stream) if (!streamer_->process(bytes, gen_config.output_callback)) return;
-		response.append(bytes);
+		std::string buffer = tokenizer_->detokenize(next_token);
+		if (!streamer_->process(buffer, gen_config.output_callback)) return;
 
 		// Generation loop
 		size_t n_generated = 1;
@@ -91,15 +87,11 @@ namespace llama_server {
 			}
 
 			next_token = sampler_->apply();
-			bytes = tokenizer_->detokenize(next_token);
-			if (gen_config.stream) if (!streamer_->process(bytes, gen_config.output_callback)) break;
-			response.append(bytes);
+			buffer += tokenizer_->detokenize(next_token);
+			if (!streamer_->process(buffer, gen_config.output_callback)) break;
 
 			n_generated++;
 		}
-
-		// End
-		if (!gen_config.stream) gen_config.output_callback(std::move(response));
 
 		return;
 	}

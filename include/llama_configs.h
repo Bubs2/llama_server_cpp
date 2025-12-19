@@ -25,7 +25,6 @@ namespace llama_server {
 	using OutputCallback = std::function<bool(std::string&&)>;
 	struct GenConfig {
 		uint32_t	max_tokens = 1024;
-		bool		stream = true;
 		bool		enable_thinking = true;
 
 		float		temperature = 1.0f;

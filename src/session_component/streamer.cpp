@@ -7,20 +7,15 @@ namespace llama_server::internal {
 	Streamer::Streamer() {}
 
 	bool Streamer::process(
-		std::string_view bytes,
+		std::string& buffer,
 		StreamCallback callback
 	) {
-		buffer_.append(bytes);
-		if (validate_utf8_end(buffer_)) {
-			std::string result = std::move(buffer_);
-			buffer_.clear();
+		if (validate_utf8_end(buffer)) {
+			std::string result = std::move(buffer);
+			buffer.clear();
 			return callback(std::move(result));
 		}
 		return true;
-	}
-
-	void Streamer::clear() {
-		buffer_.clear();
 	}
 
 	bool Streamer::validate_utf8_end(std::string_view buffer) {
