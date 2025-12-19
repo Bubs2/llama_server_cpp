@@ -17,7 +17,7 @@ Currently, this project is designed to be used as a library by adding it to your
 
 ```bash
 # Clone the repository including submodules
-git clone --recursive https://github.com/yourusername/llama_server.git
+git clone --recursive https://github.com/Bubs2/llama_server_cpp.git
 
 # Build the project
 mkdir build
