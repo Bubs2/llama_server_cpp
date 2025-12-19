@@ -24,7 +24,7 @@ namespace llama_server::internal {
         void clear();
     private:
         struct ChunkInfo {
-            mtmd_input_chunk_type type = (mtmd_input_chunk_type)99;
+            ChunkType type = (ChunkType)99;
             std::string id;
             std::vector<llama_token> tokens;
         };

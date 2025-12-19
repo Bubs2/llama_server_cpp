@@ -114,9 +114,8 @@ namespace llama_server {
 
 				std::vector<IDChunkPtr> result;
 				auto add_text = [&result, this](std::string_view text) {
-					auto chunks = tokenizer_->mtmd_tokenize(text, empty_bitmaps, false);
-					auto chunk = mtmd_input_chunks_get(chunks.get(), 0);
-					result.emplace_back(std::make_shared<IDChunk>(std::string(), chunk));
+					auto text_tokens = tokenizer_->tokenize(text, false);
+					result.emplace_back(std::make_shared<IDChunk>(std::move(text_tokens)));
 				};
 				auto add_media = [&result, this](std::string_view path) {
 					auto it = image_chunk_cache_.find(path);

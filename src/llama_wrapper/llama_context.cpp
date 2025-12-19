@@ -52,16 +52,16 @@ namespace llama_server::internal {
 		return llama_memory_seq_pos_max(llama_get_memory(context_.get()), seq_id) + 1;
 	}
 
-	void LlamaContext::text_prefill(const llama_token* tokens, size_t n_tokens) {
+	void LlamaContext::text_prefill(const llama_token* tokens, size_t n_tokens, bool logits_last) {
 		const int32_t n_batch = llama_n_batch(context_.get());
 
-		// It is guaranteed that tokens are not written by llama_decode.
+		// It is guaranteed that text_tokens are not written by llama_decode.
 		llama_token* casted_tokens = const_cast<llama_token*>(tokens);
 
 		for (int32_t i = 0; i < n_tokens; i += n_batch) {
 			int32_t n_eval = std::min(n_batch, (int32_t)n_tokens - i);
 
-			prefill_mask_[n_eval - 1] = (i + n_eval) == n_tokens;
+			prefill_mask_[n_eval - 1] = logits_last ? (i + n_eval) == n_tokens : 0;
 
 			const int32_t ret = llama_decode(
 				context_.get(),
@@ -93,8 +93,8 @@ namespace llama_server::internal {
 		}
 	}
 
-	void LlamaContext::text_prefill(const std::vector<llama_token>& tokens) {
-		text_prefill(tokens.data(), tokens.size());
+	void LlamaContext::text_prefill(std::span<llama_token> tokens, bool logits_last) {
+		text_prefill(tokens.data(), tokens.size(), logits_last);
 	}
 
 	void LlamaContext::mtmd_prefill(std::span<IDChunkPtr const> chunks) {
@@ -106,16 +106,16 @@ namespace llama_server::internal {
 		for (size_t i = 0; i < chunks.size(); i++) {
 			bool chunk_logits_last = (i + 1) == chunks.size();
 
-			auto chunk_type = chunks[i]->get_type();
-			if (chunk_type == MTMD_INPUT_CHUNK_TYPE_TEXT) {
+			auto chunk_type = chunks[i]->type;
+			if (chunk_type == TEXT) {
 				eval_single_text_chunk(
-					chunks[i]->get_data(),
+					chunks[i],
 					chunk_logits_last
 				);
 			}
-			else if (chunk_type == MTMD_INPUT_CHUNK_TYPE_IMAGE || chunk_type == MTMD_INPUT_CHUNK_TYPE_AUDIO) {
+			else if (chunk_type == IMAGE || chunk_type == AUDIO) {
 				eval_single_mtmd_chunk(
-					chunks[i]->get_data()
+					chunks[i]
 				);
 			}
 			else {
@@ -125,35 +125,7 @@ namespace llama_server::internal {
 	}
 
 	void LlamaContext::step(llama_token token) {
-		llama_batch batch = {
-			.n_tokens = 1,
-			.token = &token,
-			.embd = nullptr,
-			.pos = nullptr,
-			.n_seq_id = nullptr,
-			.seq_id = nullptr,
-			.logits = nullptr
-		};
-
-		if (token == LLAMA_TOKEN_NULL) batch.token = nullptr;
-
-		const int32_t ret = llama_decode(
-			context_.get(),
-			batch
-		);
-
-		switch (ret) {
-		case 0:
-			break;
-		case 1:
-			throw LlamaException("Decoding failed: Could not find a KV slot for the batch.");
-		case 2:
-			throw ContextGenerateDirtyException("Decoding Aborted.");
-		case -1:
-			throw LlamaException("Decoding failed: Invalid input batch.");
-		default:
-			throw ContextGenerateDirtyException("Decoding failed: Unknown error");
-		}
+		text_prefill(&token, 1, true);
 	}
 
 	void LlamaContext::KV_cleanup(int32_t head_keep, int32_t tail_spare, llama_seq_id seq_id) {
@@ -201,55 +173,19 @@ namespace llama_server::internal {
 	}
 
 	void LlamaContext::eval_single_text_chunk(
-		const mtmd_input_chunk* chunk,
+		IDChunkPtr chunk,
 		bool logits_last
 	) {
-		const int32_t n_batch = llama_n_batch(context_.get());
-		size_t n_tokens;
-		llama_token* tokens = const_cast<llama_token*>(mtmd_input_chunk_get_tokens_text(chunk, &n_tokens));
-
-		for (int32_t i = 0; i < n_tokens; i += n_batch) {
-			int32_t n_eval = std::min(n_batch, (int32_t)n_tokens - i);
-
-			prefill_mask_[n_eval - 1] = logits_last ? (i + n_eval) == n_tokens : 0;
-
-			const int32_t ret = llama_decode(
-				context_.get(),
-				llama_batch{
-					.n_tokens = n_eval,
-					.token = &tokens[i],
-					.embd = nullptr,
-					.pos = nullptr,
-					.n_seq_id = nullptr,
-					.seq_id = nullptr,
-					.logits = prefill_mask_.data()
-				}
-			);
-
-			prefill_mask_[n_eval - 1] = 0;
-
-			switch (ret) {
-			case 0:
-				break;
-			case 1:
-				throw LlamaException("Decoding failed: Could not find a KV slot for the batch.");
-			case 2:
-				throw ContextGenerateDirtyException("Decoding Aborted.");
-			case -1:
-				throw LlamaException("Decoding failed: Invalid input batch.");
-			default:
-				throw ContextGenerateDirtyException("Decoding failed: Unknown error");
-			}
-		}
+		text_prefill(chunk->text_tokens, logits_last);
 	}
 
 	void LlamaContext::eval_single_mtmd_chunk(
-		const mtmd_input_chunk* chunk
+		IDChunkPtr chunk
 	) {
 		int32_t ret;
 		mtmd_context* mtmd_ctx_ptr = model_->get_mtmd();
 
-		ret = mtmd_encode_chunk(mtmd_ctx_ptr, chunk);
+		ret = mtmd_encode_chunk(mtmd_ctx_ptr, chunk->get_data());
 		if (ret != 0) {
 			throw LlamaException("Multimodel encoding failed");
 		}
@@ -260,7 +196,7 @@ namespace llama_server::internal {
 		ret = mtmd_helper_decode_image_chunk(
 			model_->get_mtmd(),
 			context_.get(),
-			chunk,
+			chunk->get_data(),
 			embd,
 			get_used_memory(),
 			0,

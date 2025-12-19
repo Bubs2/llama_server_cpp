@@ -12,8 +12,8 @@ namespace llama_server {
 		bool	use_mlock = false;		// force system to keep model in RAM
 
 		std::string mtmd_path;			// path to multimodel
-		int image_min_tokens = -1;		// minimum number of tokens for image input (default: read from metadata)
-		int image_max_tokens = -1;		// maximum number of tokens for image input (default: read from metadata)
+		int image_min_tokens = -1;		// minimum number of text_tokens for image input (default: read from metadata)
+		int image_max_tokens = -1;		// maximum number of text_tokens for image input (default: read from metadata)
 	};
 
 	struct ContextConfig {

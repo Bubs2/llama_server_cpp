@@ -49,6 +49,7 @@ add_subdirectory(third_party/llama.cpp)
 if(LLAMA_SERVER_BUILD_TESTS)
     add_subdirectory(test/test_generate)
     add_subdirectory(test/test_mtmd)
+    add_subdirectory(test/test_cache)
 endif()
 
 set(LIB_SOURCES

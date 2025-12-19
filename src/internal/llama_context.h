@@ -34,8 +34,8 @@ namespace llama_server::internal {
 		size_t get_n_vocab() const;
 		size_t get_used_memory(llama_seq_id seq_id = 0) const;
 
-		void text_prefill(const llama_token* tokens, size_t n_tokens);
-		void text_prefill(const std::vector<llama_token>& tokens);
+		void text_prefill(const llama_token* tokens, size_t n_tokens, bool logits_last = false);
+		void text_prefill(std::span<llama_token> tokens, bool logits_last = false);
 		void mtmd_prefill(std::span<IDChunkPtr const> chunks);
 		void step(llama_token token);
 
@@ -56,11 +56,11 @@ namespace llama_server::internal {
 		std::vector<int8_t> prefill_mask_;
 
 		void eval_single_text_chunk(
-			const mtmd_input_chunk* chunk,
+			IDChunkPtr chunk,
 			bool logits_last
 		);
 		void eval_single_mtmd_chunk(
-			const mtmd_input_chunk* chunk
+			IDChunkPtr chunk
 		);
 	};
 
