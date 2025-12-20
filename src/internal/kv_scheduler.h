@@ -9,18 +9,29 @@
 #include <vector>
 #include <span>
 
+struct common_chat_msg;
+struct common_chat_tool;
+
 namespace llama_server::internal {
 
     class LlamaContext;
+    class Templater;
+    class Tokenizer;
 
     class KVScheduler {
     public:
-        KVScheduler(std::shared_ptr<LlamaContext> context);
+        KVScheduler(
+            std::shared_ptr<LlamaContext> context,
+            std::shared_ptr<Tokenizer> tokenizer,
+            std::shared_ptr<Templater> templater
+        );
         ~KVScheduler() = default;
 
-        [[deprecated("text cache && mtmd cache uses diffirent inner buffer, DO NOT intermix them!")]]
-        void prefill_text_cache(std::vector<llama_token> tokens);
-        void prefill_mtmd_cache(std::span<IDChunkPtr const> chunks);
+        void prefill_cache(
+            std::vector<common_chat_msg> msgs,
+            std::vector<common_chat_tool> tools,
+            size_t max_tokens
+        );
         void clear();
     private:
         struct ChunkInfo {
@@ -30,9 +41,8 @@ namespace llama_server::internal {
         };
 
         std::shared_ptr<LlamaContext> context_;
-
-        // For text generation.
-        std::vector<llama_token> prev_tokens_;
+        std::shared_ptr<Tokenizer> tokenizer_;
+        std::shared_ptr<Templater> templater_;
 
         std::vector<ChunkInfo> prev_chunks_info_;
     };

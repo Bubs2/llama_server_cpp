@@ -2,35 +2,23 @@
 #include "llama_log.h"
 #include "llama_context.h"
 #include "llama.h"
+#include "chat.h"
 
 #include <ranges>
 
 namespace llama_server::internal {
 
-	KVScheduler::KVScheduler(std::shared_ptr<LlamaContext> context)
-		: context_(context) {
-	}
+	KVScheduler::KVScheduler(
+		std::shared_ptr<LlamaContext> context,
+		std::shared_ptr<Tokenizer> tokenizer,
+		std::shared_ptr<Templater> templater
+	) : context_(context), tokenizer_(tokenizer), templater_(templater) { }
 
-	void KVScheduler::prefill_text_cache(std::vector<llama_token> tokens) {
-		size_t keep = 0;
-		while (keep < tokens.size() && keep < prev_tokens_.size() && tokens[keep] == prev_tokens_[keep]) ++keep;
-
-		context_->KV_cleanup(keep);
-
-		std::vector<llama_token> prefill_tokens(tokens.begin() + keep, tokens.end());
-		try {
-			context_->text_prefill(prefill_tokens);
-		}
-		catch (const LlamaException& e) {
-			prev_tokens_.clear(); // Reset to prevent any unpredictable state;
-			throw LlamaException("Error prefilling cache: " + std::string(e.what()));
-		}
-
-		prev_tokens_ = std::move(tokens);
-	}
-
-	// chunks and their ids should be managed by history manager.
-	void KVScheduler::prefill_mtmd_cache(std::span<IDChunkPtr const> chunks) {
+	void KVScheduler::prefill_cache(
+		std::vector<common_chat_msg> msgs,
+		std::vector<common_chat_tool> tools,
+		size_t max_tokens
+	) {
 		size_t perfect_keep = 0;
 		size_t last_keep = 0;
 		size_t kept_chunks = 0;
