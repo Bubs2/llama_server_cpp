@@ -9,6 +9,18 @@
 namespace llama_server {
 
     using namespace internal;
+    using namespace model_server_details;
+
+    namespace model_server_details {
+        void check_model_available(const LlamaModel* model) {
+            const auto* vocab = model->get_vocab();
+            
+            if (
+                (llama_vocab_bos(vocab) == LLAMA_TOKEN_NULL || !llama_vocab_is_control(vocab, llama_vocab_bos(vocab))) &&
+                (llama_vocab_eos(vocab) == LLAMA_TOKEN_NULL || !llama_vocab_is_control(vocab, llama_vocab_eos(vocab)))
+            ) throw LlamaException("Model has neither a BOS nor an EOS token.");
+        }
+    }
 
     // ===================================================================
     // ModelServer
@@ -32,9 +44,9 @@ namespace llama_server {
         auto delete_queue = std::move(model_map_);
         model_map_.clear();
         loading_model_set_.clear();
-        loading_model_cv_.notify_all();
 
         lock.unlock();
+        loading_model_cv_.notify_all();
 
         delete_queue.clear();
     }
@@ -43,24 +55,21 @@ namespace llama_server {
         const ModelConfig& config,
         std::string name
     ) {
-        if (shutdown_flag_) {
-            throw ServerShutdownException("ModelServer is shutdown. Cannot load model: " + name);
-        }
+        if (shutdown_flag_) throw ServerShutdownException("ModelServer is shutdown. Cannot load model: " + name);
 
         std::unique_lock lock(mutex_);
 
-        if (shutdown_flag_) {
-            throw ServerShutdownException("ModelServer is shutdown. Cannot load model: " + name);
-        }
+        if (shutdown_flag_) throw ServerShutdownException("ModelServer is shutdown. Cannot load model: " + name);
 
         if (model_map_.find(name) != model_map_.end()) return;
 
-        while (loading_model_set_.find(name) != loading_model_set_.end()) {
+        if (loading_model_set_.find(name) != loading_model_set_.end()) while (true) {
             log_info(std::format("ModelServer: Waiting for model loading: {}", name));
             loading_model_cv_.wait(lock);
-
-            if (shutdown_flag_) throw ServerShutdownException("ModelServer shutdown while loading model: " + name);
-            if (model_map_.find(name) != model_map_.end()) return;
+            if (loading_model_set_.find(name) == loading_model_set_.end()) {
+                if (model_map_.find(name) == model_map_.end()) throw LlamaException(std::format("ModelServer: Model loading failed for some reason: {}", name));
+                return;
+            }
         }
 
         loading_model_set_.emplace(name);
@@ -79,43 +88,49 @@ namespace llama_server {
         std::shared_ptr<LlamaModel> model;
 
         try { model = std::make_shared<LlamaModel>(config.model_path, model_params, config.mtmd_path, mtmd_params); }
-        catch (const LlamaException& e) {
+        catch (const std::exception& e) { // Catch all exceptions
             log_error(e.what());
             lock.lock();
             loading_model_set_.erase(name);
+            lock.unlock();
             loading_model_cv_.notify_all();
             throw LlamaException("ModelServer: Failed to load model: " + name);
+        }
+
+        try { check_model_available(model.get()); }
+        catch (const LlamaException& e) {
+            lock.lock();
+            loading_model_set_.erase(name);
+            lock.unlock();
+            loading_model_cv_.notify_all();
+            throw LlamaException("ModelServer: Model not supported: " + name + ". " + e.what());
         }
 
         lock.lock();
 
         if (shutdown_flag_) {
             loading_model_set_.erase(name);
+            lock.unlock();
             loading_model_cv_.notify_all();
-            throw ServerShutdownException("ModelServer is shutdown after loading model: " + name);
+            throw ServerShutdownException("ModelServer is shutdown while loading model: " + name);
         }
 
         loading_model_set_.erase(name);
         model_map_.emplace(std::move(name), std::move(model));
+        lock.unlock();
         loading_model_cv_.notify_all();
     }
 
     void ModelServer::unload_model(
         std::string name
     ) {
-        if (shutdown_flag_) {
-            throw ServerShutdownException("ModelServer is shutdown. Cannot load model: " + name);
-        }
+        if (shutdown_flag_) throw ServerShutdownException("ModelServer is shutdown. Cannot load model: " + name);
 
         std::unique_lock lock(mutex_);
 
-        if (shutdown_flag_) {
-            throw ServerShutdownException("ModelServer is shutdown. Cannot get model: " + name);
-        }
+        if (shutdown_flag_) throw ServerShutdownException("ModelServer is shutdown. Cannot get model: " + name);
 
-        if (loading_model_set_.find(name) != loading_model_set_.end()) {
-            throw UnloadWhenLoadingModelException("Model is loading, try unload after loading is done: " + name);
-        }
+        while (loading_model_set_.find(name) != loading_model_set_.end()) loading_model_cv_.wait(lock);
 
         model_map_.erase(name);
     }
@@ -126,20 +141,16 @@ namespace llama_server {
     ) const {
         std::shared_lock lock(mutex_);
 
-        if (shutdown_flag_) {
-            throw ServerShutdownException("ModelServer is shutdown. Cannot get session.");
-        }
-
-        auto model = model_map_.find(model_name);
+        if (shutdown_flag_) throw ServerShutdownException("ModelServer is shutdown. Cannot get session.");
 
         while (loading_model_set_.find(model_name) != loading_model_set_.end()) {
             log_info(std::format("ModelServer: Waiting for model loading: {}", model_name));
             loading_model_cv_.wait(lock);
 
             if (shutdown_flag_) throw ServerShutdownException("ModelServer shutdown while loading model: " + model_name);
-            if ((model = model_map_.find(model_name)) != model_map_.end()) break;
         }
 
+        auto model = model_map_.find(model_name);
         if (model == model_map_.end()) {
             throw LlamaException("Model not found: " + model_name);
         }
