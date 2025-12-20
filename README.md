@@ -1,6 +1,11 @@
 # llama.cpp_wrapper
 
-A lightweight C++23 inference engine built on top of [llama.cpp](https://github.com/ggerganov/llama.cpp). This library works as a wrapper and a basic KV Cache and Chat History manager with support for multi-model (Currently tested on image).
+A lightweight C++23 inference engine built on top of [llama.cpp](https://github.com/ggerganov/llama.cpp). This library works as a wrapper and a basic KV Cache and Chat History manager with support for multi-model.
+
+## Model Support & Limitations
+
+- **Vocabs**: Requires models that implement **BOS** (Beginning of Sequence) or **EOS** (End of Sequence) tokens for proper history/kv cache management.
+- **Multimodal**: Currently tested primarily on vision-language models.
 
 ## Prerequisites
 
