@@ -23,6 +23,7 @@ namespace llama_server {
 	};
 
 	using OutputCallback = std::function<bool(std::string&&)>;
+	using ToolCallback = std::function<std::string(std::string_view json_str)>;
 	struct GenConfig {
 		uint32_t	max_tokens = 1024;
 		bool		enable_thinking = true;
@@ -39,7 +40,5 @@ namespace llama_server {
 		bool		add_generation_prompt = true;
 		OutputCallback output_callback = nullptr;
 	};
-
-	using ToolCallback = std::function<std::string(std::string_view json_str)>;
 
 }

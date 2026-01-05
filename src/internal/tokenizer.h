@@ -16,10 +16,10 @@ namespace llama_server::internal {
 
 	class Tokenizer {
 	public:
-		Tokenizer(std::shared_ptr<LlamaModel> model);
+		Tokenizer(const LlamaModel& model);
 		~Tokenizer();
 
-		std::vector<llama_token> tokenize(
+		std::vector<llama_token> text_tokenize(
 			std::string_view text,
 			bool add_special = true,
 			bool parse_special = true
@@ -37,7 +37,7 @@ namespace llama_server::internal {
 			bool parse_special = true
 		) const;
 	private:
-		std::shared_ptr<LlamaModel> model_;
+		const LlamaModel& model_;
 	};
 
 }

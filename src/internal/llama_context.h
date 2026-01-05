@@ -26,8 +26,10 @@ namespace llama_server::internal {
 		LlamaContext(LlamaContext&&) noexcept;
 		LlamaContext& operator=(LlamaContext&&) noexcept;
 
+		bool is_mtmd() const;
+
 		llama_context* get_data() const { return context_.get(); }
-		std::shared_ptr<LlamaModel> get_model() const { return model_; }
+		LlamaModel& get_model() const { return *model_; }
 		const llama_vocab* get_vocab() const;
 
 		size_t get_n_ctx() const;
@@ -36,7 +38,7 @@ namespace llama_server::internal {
 
 		void text_prefill(const llama_token* tokens, size_t n_tokens, bool logits_last = false);
 		void text_prefill(std::span<llama_token> tokens, bool logits_last = false);
-		void mtmd_prefill(std::span<IDChunkPtr const> chunks);
+		void mtmd_prefill(std::span<IDChunksPtr const> chunks);
 		void step(llama_token token);
 
 		void KV_cleanup(
@@ -55,12 +57,13 @@ namespace llama_server::internal {
 
 		std::vector<int8_t> prefill_mask_;
 
-		void eval_single_text_chunk(
-			IDChunkPtr chunk,
+		void eval_single_text_chunks(
+			IDChunksPtr chunks,
 			bool logits_last
 		);
-		void eval_single_mtmd_chunk(
-			IDChunkPtr chunk
+		void eval_single_mtmd_chunks(
+			IDChunksPtr chunks,
+			bool logits_last
 		);
 	};
 

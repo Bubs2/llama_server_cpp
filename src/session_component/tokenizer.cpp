@@ -5,13 +5,12 @@
 
 namespace llama_server::internal {
 
-	Tokenizer::Tokenizer(std::shared_ptr<LlamaModel> model)
-		: model_(model) {
-	}
+	Tokenizer::Tokenizer(const LlamaModel& model)
+		: model_(model) { }
 
 	Tokenizer::~Tokenizer() { return; }
 
-	std::vector<llama_token> Tokenizer::tokenize(
+	std::vector<llama_token> Tokenizer::text_tokenize(
 		std::string_view text,
 		bool add_special,
 		bool parse_special
@@ -26,7 +25,7 @@ namespace llama_server::internal {
 			tokens.resize(estimated_size);
 
 			n_tokens = llama_tokenize(
-				model_->get_vocab(),
+				model_.get_vocab(),
 				text.data(),
 				text.length(),
 				tokens.data(),
@@ -54,7 +53,7 @@ namespace llama_server::internal {
 		std::string buffer(256, '\0');
 
 		const int32_t n_chars = llama_token_to_piece(
-			model_->get_vocab(),
+			model_.get_vocab(),
 			token,
 			buffer.data(),
 			buffer.size(),
@@ -88,7 +87,7 @@ namespace llama_server::internal {
 		mtmd::input_chunks_ptr chunks_ptr(mtmd_input_chunks_init());
 
 		int32_t res = ::mtmd_tokenize(
-			model_->get_mtmd(),
+			model_.get_mtmd(),
 			chunks_ptr.get(), // output
 			&mtmd_text, // text
 			bitmaps_c_ptr.data(),

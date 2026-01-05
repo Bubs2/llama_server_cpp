@@ -53,18 +53,21 @@ if(LLAMA_SERVER_BUILD_TESTS)
 endif()
 
 set(LIB_SOURCES
+    "src/utils/utils.cpp"
+    "src/utils/llama_strategy.cpp"
+
     "src/llama_wrapper/llama_model.cpp"
     "src/llama_wrapper/llama_context.cpp"
 
-    "src/utils/utils.cpp"
-
-    "src/session_component/kv_scheduler.cpp"
-    "src/session_component/sampler.cpp"
-    "src/session_component/streamer.cpp"
     "src/session_component/tokenizer.cpp"
     "src/session_component/templater.cpp"
-    "src/session_component/history_manager.cpp"
 
+    "src/session_component/input_encoder.cpp"
+    "src/session_component/kv_scheduler.cpp"
+
+    "src/session_component/sampler.cpp"
+    "src/session_component/streamer.cpp"
+    
     "src/llama_session.cpp"
     "src/model_server.cpp"
 )
@@ -72,11 +75,10 @@ set(LIB_SOURCES
 set(LIB_HEADERS
     "include/llama_exception.h"
     "include/llama_configs.h"
+    "include/llama_inputs.h"
+    "include/llama_strategy.h"
     "include/model_server.h"
     "include/llama_session.h"
-    "include/history_manager.h"
-    
-    "src/internal/history_manager_internal.h"
 
     "src/internal/utils.h"
     "src/internal/llama_log.h"
@@ -85,11 +87,14 @@ set(LIB_HEADERS
     "src/internal/llama_model.h"
     "src/internal/llama_context.h"
 
-    "src/internal/sampler.h"
-    "src/internal/streamer.h"
     "src/internal/tokenizer.h"
     "src/internal/templater.h"
+
+    "src/internal/input_encoder.h"
     "src/internal/kv_scheduler.h"
+
+    "src/internal/sampler.h"
+    "src/internal/streamer.h"
 )
 
 add_library(${PROJECT_NAME}

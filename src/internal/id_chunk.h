@@ -6,72 +6,63 @@
 #include <vector>
 #include <string>
 #include <string_view>
+#include <ranges>
 
 namespace llama_server::internal {
 
 	using llama_token = int32_t;
 
-	enum ChunkType {
+	enum ChunksType {
 		TEXT,
 		IMAGE,
 		AUDIO,
 	};
 
-	struct IDChunk {
-		struct ChunkDeleter {
-			void operator()(mtmd_input_chunk* ptr) { mtmd_input_chunk_free(ptr); }
-		};
-
-		ChunkType type = (ChunkType)100;
+	struct IDChunks {
+		ChunksType type = (ChunksType)100;
 
 		std::string id;
-		std::unique_ptr<mtmd_input_chunk, ChunkDeleter> chunk = nullptr;
-
+		mtmd::input_chunks_ptr chunks;
 		std::vector<llama_token> text_tokens;
+		size_t n_tokens = 0;
 
-		IDChunk() = default;
-		explicit IDChunk(std::string id, const mtmd_input_chunk* chunk)
-			: id(id)
+		explicit IDChunks(std::string id, mtmd::input_chunks_ptr chunks)
+			: id(id), chunks(std::move(chunks))
 		{
-			switch (mtmd_input_chunk_get_type(this->chunk.get())) {
-			case MTMD_INPUT_CHUNK_TYPE_TEXT: {
-				type = TEXT;
+			size_t n_chunks = mtmd_input_chunks_size(this->chunks.get());
+			for (auto idx : std::views::iota((size_t)0, n_chunks)) {
+				n_tokens += mtmd_input_chunk_get_n_tokens(mtmd_input_chunks_get(this->chunks.get(), idx));
+			}
+
+			for (auto idx : std::views::iota((size_t)0, n_chunks)) {
+				switch (mtmd_input_chunk_get_type(mtmd_input_chunks_get(this->chunks.get(), idx))) {
+				case MTMD_INPUT_CHUNK_TYPE_IMAGE: type = IMAGE; return;
+				case MTMD_INPUT_CHUNK_TYPE_AUDIO: type = AUDIO; return;
+				}
+			}
+
+			for (auto idx : std::views::iota((size_t)0, n_chunks)) {
 				size_t n_tokens;
-				const llama_token* ptr = mtmd_input_chunk_get_tokens_text(this->chunk.get(), &n_tokens);
-				text_tokens.assign(ptr, ptr + n_tokens);
-				break;
+				const llama_token* tokens = mtmd_input_chunk_get_tokens_text(mtmd_input_chunks_get(this->chunks.get(), idx), &n_tokens);
+				text_tokens.insert(text_tokens.end(), tokens, tokens + n_tokens);
 			}
-			case MTMD_INPUT_CHUNK_TYPE_IMAGE:
-                type = IMAGE;
-				this->chunk = std::unique_ptr<mtmd_input_chunk, ChunkDeleter>(mtmd_input_chunk_copy(chunk));
-				break;
-			case MTMD_INPUT_CHUNK_TYPE_AUDIO:
-				type = AUDIO;
-				this->chunk = std::unique_ptr<mtmd_input_chunk, ChunkDeleter>(mtmd_input_chunk_copy(chunk));
-				break;
-			}
+			type = TEXT;
 		}
-		explicit IDChunk(std::vector<llama_token> tokens)
+		explicit IDChunks(std::vector<llama_token> tokens)
 			: text_tokens(std::move(tokens))
-		{ type = TEXT; }
+		{ type = TEXT; n_tokens = text_tokens.size(); }
 
-		IDChunk(IDChunk&&) = default;
-		IDChunk& operator=(IDChunk&&) = default;
-		IDChunk(const IDChunk&) = delete;
-		IDChunk& operator=(const IDChunk&) = delete;
-
-		const mtmd_input_chunk* get_data() const { return chunk.get(); }
-		size_t get_n_tokens() const {
-			if (type == TEXT) return text_tokens.size();
-			return mtmd_input_chunk_get_n_tokens(chunk.get());
-		}
+		IDChunks(IDChunks&&) = default;
+		IDChunks& operator=(IDChunks&&) = default;
+		IDChunks(const IDChunks&) = delete;
+		IDChunks& operator=(const IDChunks&) = delete;
 	};
 
-	using IDChunkPtr = std::shared_ptr<IDChunk>;
+	using IDChunksPtr = std::shared_ptr<IDChunks>;
 
-	struct IDChunkPtrHash {
+	struct IDChunksPtrHash {
 		using is_transparent = void;
-		size_t operator()(const IDChunkPtr& ptr) const {
+		size_t operator()(const IDChunksPtr& ptr) const {
 			if (!ptr) return 0;
 			return std::hash<std::string_view>{}(ptr->id);
 		}
@@ -80,17 +71,17 @@ namespace llama_server::internal {
 		}
 	};
 
-	struct IDChunkPtrEqual {
+	struct IDChunksPtrEqual {
 		using is_transparent = void;
-		bool operator()(const IDChunkPtr& lhs, const IDChunkPtr& rhs) const {
+		bool operator()(const IDChunksPtr& lhs, const IDChunksPtr& rhs) const {
 			if (lhs == rhs) return true;
 			if (!lhs || !rhs) return false;
 			return lhs->id == rhs->id;
 		}
-		bool operator()(const IDChunkPtr& lhs, std::string_view rhs) const {
+		bool operator()(const IDChunksPtr& lhs, std::string_view rhs) const {
 			return lhs && lhs->id == rhs;
 		}
-		bool operator()(std::string_view lhs, const IDChunkPtr& rhs) const {
+		bool operator()(std::string_view lhs, const IDChunksPtr& rhs) const {
 			return rhs && lhs == rhs->id;
 		}
 	};

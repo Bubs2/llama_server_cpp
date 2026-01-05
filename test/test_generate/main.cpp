@@ -1,5 +1,6 @@
 #include "model_server.h"
 #include "llama_configs.h"
+#include "llama_inputs.h"
 #include "llama_session.h"
 
 #include <windows.h>
@@ -32,7 +33,10 @@ int main(int argc, char* argv[]) {
 			.n_ctx = 10240
 		}
 	);
-	auto& history = session->access_history_manager();
+
+	std::vector<Message> head_msgs;
+	std::vector<Message> tail_msgs;
+	std::vector<Tool> tools;
 
 	auto tool_callback = [](std::string_view parameters) {
         json j = json::parse(parameters);
@@ -40,7 +44,7 @@ int main(int argc, char* argv[]) {
 		int num_2 = j["arguments"]["num_2"];
 		return std::format("计算器结果：{}", num_1 + num_2);
 	};
-	history.add_tool(Tool{
+	tools.emplace_back(Tool{
 		.name = "Sum",
 		.description = "对两个整数进行求和运算。对所有两数相加整数，直接用参数调用Sum。",
 		.parameters = R"(
@@ -108,13 +112,14 @@ int main(int argc, char* argv[]) {
 		so.tool_result_buffer = std::string();
 		so.tool_call_buffer = std::string();
 
-		history.add_message(
+		tail_msgs.emplace_back(
 			Message{
 				.role = "user",
 				.content = std::move(input)
 			}
 		);
 		session->generate(
+			head_msgs, tail_msgs, tools,
 			GenConfig{
 				.temperature = 0.4f,
 				.top_k = 200,
@@ -123,7 +128,7 @@ int main(int argc, char* argv[]) {
 				.output_callback = so.cb
 			}
 		);
-		history.add_message(
+		tail_msgs.emplace_back(
 			Message{
 				.role = "assistant",
 				.content = std::move(so.response_buffer)
@@ -136,21 +141,21 @@ int main(int argc, char* argv[]) {
 
 		so.response_buffer = std::string();
 
-		history.add_message(
+		tail_msgs.emplace_back(
 			Message{
 				.role = "tool",
 				.content = std::move(so.tool_result_buffer)
 			}
 		);
 		session->generate(
+			head_msgs, tail_msgs, tools,
 			GenConfig{
 				.temperature = 0.2f,
 				.top_k = 100,
-				.add_generation_prompt = false,
 				.output_callback = so.cb
 			}
 		);
-		history.add_message(
+		tail_msgs.emplace_back(
 			Message{
 				.role = "assistant",
 				.content = std::move(so.response_buffer)

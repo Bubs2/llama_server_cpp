@@ -1,8 +1,10 @@
 #include "llama_session.h"
+#include "llama_log.h"
+#include "llama_strategy.h"
+#include "id_chunk.h"
 #include "llama_model.h"
 #include "llama_context.h"
-#include "llama_log.h"
-#include "history_manager_internal.h"
+#include "input_encoder.h"
 #include "kv_scheduler.h"
 #include "tokenizer.h"
 #include "templater.h"
@@ -25,15 +27,15 @@ namespace llama_server {
 		llm_context_params.n_batch = context_config.n_batch;
 		llm_context_params.n_ubatch = context_config.n_ubatch;
 
-		context_ = std::make_shared<LlamaContext>(llm_context_params, model);
-		kv_scheduler_ = std::make_unique<KVScheduler>(context_);
-		sampler_ = std::make_unique<Sampler>(context_);
+		context_ = std::make_unique<LlamaContext>(llm_context_params, model);
 
-		tokenizer_ = std::make_shared<Tokenizer>(context_->get_model());
-		templater_ = std::make_shared<Templater>(context_->get_model());
+		tokenizer_ = std::make_unique<Tokenizer>(context_->get_model());
+		templater_ = std::make_unique<Templater>(context_->get_model());
 
-		history_manager_ = std::make_unique<HistoryManager>(context_->get_model(), tokenizer_, templater_, context_->get_n_ctx());
+		input_encoder_ = std::make_unique<InputEncoder>(*context_, *templater_, *tokenizer_, TokenEstimateStrategy(16));
+		kv_scheduler_ = std::make_unique<KVScheduler>(*context_);
 
+		sampler_ = std::make_unique<Sampler>(*context_);
 		streamer_ = std::make_unique<Streamer>();
 	}
 
@@ -42,21 +44,64 @@ namespace llama_server {
 	LlamaSession::LlamaSession(LlamaSession&&) noexcept = default;
 	LlamaSession& LlamaSession::operator=(LlamaSession&&) noexcept = default;
 
-	void LlamaSession::generate(const GenConfig& gen_config) {
+	void LlamaSession::generate(
+		std::vector<Message> head_msgs,
+		std::vector<Message> tail_msgs,
+		std::vector<Tool> tools,
+		const GenConfig& gen_config
+	) {
 		// Pre-checks
+		size_t max_tokens = gen_config.max_tokens;
+
 		if (gen_config.max_tokens == 0) {
 			log_warn("Max tokens is set to 0, nothing to generate.");
 			return;
 		}
+		if (gen_config.max_tokens > context_->get_n_ctx()) {
+			log_warn("Max tokens is greater than context size, setting to context size. Note: all memory will be pruned.");
+            max_tokens = context_->get_n_ctx();
+		}
 
-		// Prefill
-		try { kv_scheduler_->prefill_mtmd_cache(ChunksAccessor::get_chunks(*history_manager_, gen_config.max_tokens)); }
+		// Translate Message & Tool wrapper
+		std::vector<common_chat_msg> llama_head_msgs;
+		for (auto& msg : head_msgs) {
+			llama_head_msgs.emplace_back(common_chat_msg{
+				.role = std::move(msg.role),
+				.content = std::move(msg.content)
+			});
+		}
+		std::vector<common_chat_msg> llama_tail_msgs;
+		for (auto& msg : tail_msgs) {
+			llama_tail_msgs.emplace_back(common_chat_msg{
+				.role = std::move(msg.role),
+				.content = std::move(msg.content)
+			});
+		}
+		std::vector<common_chat_tool> llama_tools;
+		for (auto& tool : tools) {
+			llama_tools.emplace_back(common_chat_tool{
+				.name = std::move(tool.name),
+				.description = std::move(tool.description),
+				.parameters = std::move(tool.parameters)
+			});
+		}
+
+		// Prune and tokenize
+		std::vector<IDChunksPtr> chunks;
+		try { chunks = (*input_encoder_)(std::move(llama_head_msgs), std::move(llama_tail_msgs), std::move(llama_tools), max_tokens); }
 		catch (const LlamaException& e) {
 			log_error(e.what());
 			return;
 		}
 
-		common_chat_params chat_params = ChatParamsAccessor::get_params(*history_manager_);
+		// Prefill
+		try { kv_scheduler_->prefill_mtmd_cache(chunks); }
+		catch (const LlamaException& e) {
+			log_error(e.what());
+			return;
+		}
+
+		common_chat_params chat_params = input_encoder_->get_chat_params_cache();
 		log_info(std::format("\n{}", chat_params.prompt));
 
 		sampler_->set(gen_config, chat_params);
@@ -72,7 +117,7 @@ namespace llama_server {
 
 		// Generation loop
 		size_t n_generated = 1;
-		while (n_generated < gen_config.max_tokens) {
+		while (n_generated < max_tokens) {
 			try {
 				context_->step(next_token);
 			}
@@ -96,8 +141,8 @@ namespace llama_server {
 		return;
 	}
 
-	HistoryManager& LlamaSession::access_history_manager() {
-		return *history_manager_;
+	void LlamaSession::set_token_estimate_strategy(TokenEstimateStrategy&& strategy) {
+		input_encoder_->set_token_estimate_strategy(std::move(strategy));
 	}
 
 }

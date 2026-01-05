@@ -1,7 +1,8 @@
 #include "model_server.h"
 #include "llama_configs.h"
+#include "llama_strategy.h"
+#include "llama_inputs.h"
 #include "llama_session.h"
-#include "history_manager.h"
 
 #include <windows.h>
 #include <memory>
@@ -22,6 +23,7 @@ int main(int argc, char* argv[]) {
 	server.load_model(
 		ModelConfig{
 			.model_path = "D:/CraftTools/AI/my_ai_assistant/model/MiniCPM-V-4_5-Q4_K_M.gguf",
+			.n_gpu_layers = 99,
 		},
 		"MiniCPM-V-4.5"
 	);
@@ -29,10 +31,24 @@ int main(int argc, char* argv[]) {
 	std::unique_ptr<LlamaSession> session = server.get_session(
 		"MiniCPM-V-4.5",
 		ContextConfig{
-			.n_ctx = 512
+			.n_ctx = 2048,
+			.n_batch = 2048,
+			.n_ubatch = 2048,
 		}
 	);
-	auto& history = session->access_history_manager();
+
+	// Accurate estimation(default) 700-1000ms TTFT when full ctx : Simple estimation 200-300ms TTFT when full ctx
+	session->set_token_estimate_strategy(TokenEstimateStrategy(
+		[](const TokenizeCallback& tokenize_cb, std::string_view str) {
+			// Simple estimation: 1 token per 2 characters
+			return (str.size() + 1) / 2;
+		},
+		64 // Margin
+	));
+
+	std::vector<Message> head_msgs;
+	std::vector<Message> tail_msgs;
+	std::vector<Tool> tools;
 
 	struct simple_output {
 		std::string response_buffer;
@@ -57,10 +73,11 @@ int main(int argc, char* argv[]) {
 		};
 	};
 	simple_output so;
+
 	for (int i = 0; i < 100; ++i) {
 		so.response_buffer = std::string();
 
-		history.add_message(
+		tail_msgs.emplace_back(
 			Message{
 				.role = "user",
 				.content = "正在进行KV Cache测试——测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试测试"
@@ -70,6 +87,7 @@ int main(int argc, char* argv[]) {
 		so.is_first_token = true;
 		so.start_time = std::chrono::high_resolution_clock::now();
 		session->generate(
+			head_msgs, tail_msgs, tools,
 			GenConfig{
 				.max_tokens = 256,
 				.temperature = 0.4f,
@@ -79,7 +97,8 @@ int main(int argc, char* argv[]) {
 				.output_callback = so.cb
 			}
 		);
-		history.add_message(
+
+		tail_msgs.emplace_back(
 			Message{
 				.role = "assistant",
 				.content = std::move(so.response_buffer)

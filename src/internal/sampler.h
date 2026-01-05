@@ -16,8 +16,8 @@ namespace llama_server::internal {
 
 	class Sampler {
 	public:
-		Sampler(std::shared_ptr<LlamaContext> context);
-		~Sampler() = default;
+		Sampler(const LlamaContext& context);
+		~Sampler();
 
 		void set(
 			const GenConfig& gen_config,
@@ -33,7 +33,7 @@ namespace llama_server::internal {
 
 		SamplerPtr ptr_ = nullptr;
 
-		std::shared_ptr<LlamaContext> context_;
+		const LlamaContext& context_;
 
 		std::vector<llama_token_data> candidates_buffer_;
 

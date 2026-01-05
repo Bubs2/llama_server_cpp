@@ -7,7 +7,7 @@
 
 namespace llama_server::internal {
 
-	KVScheduler::KVScheduler(std::shared_ptr<LlamaContext> context)
+	KVScheduler::KVScheduler(LlamaContext& context)
 		: context_(context) {
 	}
 
@@ -15,11 +15,11 @@ namespace llama_server::internal {
 		size_t keep = 0;
 		while (keep < tokens.size() && keep < prev_tokens_.size() && tokens[keep] == prev_tokens_[keep]) ++keep;
 
-		context_->KV_cleanup(keep);
+		context_.KV_cleanup(keep);
 
 		std::vector<llama_token> prefill_tokens(tokens.begin() + keep, tokens.end());
 		try {
-			context_->text_prefill(prefill_tokens);
+			context_.text_prefill(prefill_tokens);
 		}
 		catch (const LlamaException& e) {
 			prev_tokens_.clear(); // Reset to prevent any unpredictable state;
@@ -29,8 +29,7 @@ namespace llama_server::internal {
 		prev_tokens_ = std::move(tokens);
 	}
 
-	// chunks and their ids should be managed by history manager.
-	void KVScheduler::prefill_mtmd_cache(std::span<IDChunkPtr const> chunks) {
+	void KVScheduler::prefill_mtmd_cache(std::span<IDChunksPtr const> chunks) {
 		size_t perfect_keep = 0;
 		size_t last_keep = 0;
 		size_t kept_chunks = 0;
@@ -43,11 +42,11 @@ namespace llama_server::internal {
 
 			if (chunk_type != prev_chunk_info.type) break;
 
-			// If we got a media chunk, we compare its ID with the previous one.
+			// If we got media chunks, we compare its ID with the previous one.
 			if (chunk_type == IMAGE || chunk_type == AUDIO) {
 				if (chunk->id != prev_chunk_info.id) break;
 
-				perfect_keep += chunk->get_n_tokens();
+				perfect_keep += chunk->n_tokens;
 			}
 
 			// If we got a text chunk, we compare its text_tokens with the previous ones, and partially keep the first differing chunk.
@@ -71,7 +70,7 @@ namespace llama_server::internal {
 			kept_chunks += 1;
 		}
 
-		context_->KV_cleanup(perfect_keep + last_keep);
+		context_.KV_cleanup(perfect_keep + last_keep);
 
 		if (last_keep != 0) {
 			auto& last_chunk = chunks[kept_chunks];
@@ -79,7 +78,7 @@ namespace llama_server::internal {
 			auto& tokens = last_chunk->text_tokens;
 
 			try {
-				context_->text_prefill({ tokens.begin() + last_keep, tokens.end() }, true);
+				context_.text_prefill({ tokens.begin() + last_keep, tokens.end() }, kept_chunks == chunks.size() - 1);
 			}
 			catch (const LlamaException& e) {
 				prev_chunks_info_.clear(); // Reset to prevent any unpredictable state;
@@ -88,7 +87,7 @@ namespace llama_server::internal {
 		}
 
 		try {
-			context_->mtmd_prefill(chunks.subspan(kept_chunks + (last_keep != 0)));
+			context_.mtmd_prefill(chunks.subspan(kept_chunks + (last_keep != 0)));
 		}
 		catch (const LlamaException& e) {
 			prev_chunks_info_.clear(); // Reset to prevent any unpredictable state;
@@ -119,7 +118,7 @@ namespace llama_server::internal {
 			}
 		}
 
-		log_info(std::format("KV Cache used: {}", context_->get_used_memory()));
+		log_info(std::format("KV Cache used: {}", context_.get_used_memory()));
 	}
 
 	void KVScheduler::clear() {

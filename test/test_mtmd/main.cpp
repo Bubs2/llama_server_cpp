@@ -1,7 +1,7 @@
 #include "model_server.h"
 #include "llama_configs.h"
+#include "llama_inputs.h"
 #include "llama_session.h"
-#include "history_manager.h"
 
 #include <windows.h>
 #include <memory>
@@ -21,7 +21,8 @@ int main(int argc, char* argv[]) {
 	server.load_model(
 		ModelConfig{
 			.model_path = "D:/CraftTools/AI/my_ai_assistant/model/MiniCPM-V-4_5-Q4_K_M.gguf",
-			.mtmd_path = "D:/CraftTools/AI/my_ai_assistant/model/mmproj-model-f16.gguf"
+			.n_gpu_layers = 99,
+			.mtmd_path = "D:/CraftTools/AI/my_ai_assistant/model/mmproj-model-f16.gguf",
 		},
 		"MiniCPM-V-4.5"
 	);
@@ -29,15 +30,20 @@ int main(int argc, char* argv[]) {
 	std::unique_ptr<LlamaSession> session = server.get_session(
 		"MiniCPM-V-4.5",
 		ContextConfig{
-			.n_ctx = 10240
+			.n_ctx = 10240,
+			.n_batch = 2048,
+			.n_ubatch = 2048,
 		}
 	);
-	auto& history = session->access_history_manager();
+	
+	std::vector<Message> head_msgs;
+	std::vector<Message> tail_msgs;
+	std::vector<Tool> tools;
 
-	history.add_message(
+	tail_msgs.emplace_back(
 		Message{
 			.role = "user",
-			.content = "这里有一张图片：<__path:D:/CraftTools/AI/my_ai_assistant/src/test/test_mtmd/image/prac_back.png__>"
+			.content = "这里有一张图片：<__path:./image/prac_back.png__>"
 		}
 	);
 
@@ -58,13 +64,14 @@ int main(int argc, char* argv[]) {
 
 		so.response_buffer = std::string();
 
-		history.add_message(
+		tail_msgs.emplace_back(
 			Message{
 				.role = "user",
 				.content = std::move(input)
 			}
 		);
 		session->generate(
+			head_msgs, tail_msgs, tools,
 			GenConfig{
 				.temperature = 0.4f,
 				.top_k = 200,
@@ -73,7 +80,7 @@ int main(int argc, char* argv[]) {
 				.output_callback = so.cb
 			}
 		);
-		history.add_message(
+		tail_msgs.emplace_back(
 			Message{
 				.role = "assistant",
 				.content = std::move(so.response_buffer)

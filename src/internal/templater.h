@@ -10,12 +10,12 @@ namespace llama_server::internal {
 
 	class Templater {
 	public:
-		Templater(std::shared_ptr<LlamaModel> model);
+		Templater(const LlamaModel& model);
 		~Templater();
 
-		common_chat_params apply_templates(const common_chat_templates_inputs& inputs) const;
+		common_chat_params operator()(const common_chat_templates_inputs& inputs) const;
 	private:
-		common_chat_templates_ptr tmpl_;
+		const common_chat_templates_ptr tmpl_;
 	};
 
 }

@@ -42,6 +42,8 @@ namespace llama_server::internal {
 
 	LlamaContext& LlamaContext::operator=(LlamaContext&& other) noexcept = default;
 
+	bool LlamaContext::is_mtmd() const { return model_->get_mtmd() != nullptr; }
+
 	const llama_vocab* LlamaContext::get_vocab() const { return model_->get_vocab(); }
 
 	size_t LlamaContext::get_n_ctx() const { return llama_n_ctx(context_.get()); }
@@ -97,7 +99,7 @@ namespace llama_server::internal {
 		text_prefill(tokens.data(), tokens.size(), logits_last);
 	}
 
-	void LlamaContext::mtmd_prefill(std::span<IDChunkPtr const> chunks) {
+	void LlamaContext::mtmd_prefill(std::span<IDChunksPtr const> chunks) {
 		if (chunks.size() == 0) {
 			log_info("No chunks to prefill");
 			return;
@@ -108,14 +110,15 @@ namespace llama_server::internal {
 
 			auto chunk_type = chunks[i]->type;
 			if (chunk_type == TEXT) {
-				eval_single_text_chunk(
+				eval_single_text_chunks(
 					chunks[i],
 					chunk_logits_last
 				);
 			}
 			else if (chunk_type == IMAGE || chunk_type == AUDIO) {
-				eval_single_mtmd_chunk(
-					chunks[i]
+				eval_single_mtmd_chunks(
+					chunks[i],
+					chunk_logits_last
 				);
 			}
 			else {
@@ -172,41 +175,27 @@ namespace llama_server::internal {
 		llama_memory_seq_add(kv_mem, seq_id, p1, n_past, -(llama_pos)n_discard);
 	}
 
-	void LlamaContext::eval_single_text_chunk(
-		IDChunkPtr chunk,
+	void LlamaContext::eval_single_text_chunks(
+		IDChunksPtr chunks,
 		bool logits_last
 	) {
-		text_prefill(chunk->text_tokens, logits_last);
+		text_prefill(chunks->text_tokens, logits_last);
 	}
 
-	void LlamaContext::eval_single_mtmd_chunk(
-		IDChunkPtr chunk
+	void LlamaContext::eval_single_mtmd_chunks(
+		IDChunksPtr chunks,
+		bool logits_last
 	) {
-		int32_t ret;
-		mtmd_context* mtmd_ctx_ptr = model_->get_mtmd();
-
-		ret = mtmd_encode_chunk(mtmd_ctx_ptr, chunk->get_data());
-		if (ret != 0) {
-			throw LlamaException("Multimodel encoding failed");
-		}
-
-		float* embd = mtmd_get_output_embd(mtmd_ctx_ptr);
-
 		llama_pos new_n_past; // fake variable to satisfy the API
-		ret = mtmd_helper_decode_image_chunk(
+		if (mtmd_helper_eval_chunks(
 			model_->get_mtmd(),
 			context_.get(),
-			chunk->get_data(),
-			embd,
+			chunks->chunks.get(),
 			get_used_memory(),
 			0,
 			llama_n_batch(context_.get()),
-			&new_n_past
-		);
-
-		if (ret != 0) {
-			throw LlamaException("Multimodel decoding failed");
-		}
+			logits_last,
+			&new_n_past)) { throw LlamaException("Multimodel decoding failed"); }
 	}
 
 }

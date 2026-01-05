@@ -17,10 +17,11 @@ namespace llama_server::internal {
 	// Sampler
 	// ===================================================================
 
-	Sampler::Sampler(std::shared_ptr<LlamaContext> context) {
-		context_ = context;
-		candidates_buffer_.resize(context_->get_n_vocab());
+	Sampler::Sampler(const LlamaContext& context)
+		: context_(context) {
+		candidates_buffer_.resize(context_.get_n_vocab());
 	}
+	Sampler::~Sampler() = default;
 
 	void Sampler::set(
 		const GenConfig& gen_config,
@@ -28,7 +29,7 @@ namespace llama_server::internal {
 	) {
 		ptr_ = SamplerPtr(llama_sampler_chain_init(llama_sampler_chain_default_params()));
 		if (!chat_params.grammar.empty()) {
-			try { llama_sampler_chain_add(ptr_.get(), get_grammar_sampler(chat_params, context_->get_vocab())); }
+			try { llama_sampler_chain_add(ptr_.get(), get_grammar_sampler(chat_params, context_.get_vocab())); }
 			catch (const LlamaException& e) { log_warn(e.what()); }
 		}
 		llama_sampler_chain_add(ptr_.get(), llama_sampler_init_temp(gen_config.temperature));
@@ -51,9 +52,9 @@ namespace llama_server::internal {
 	}
 
 	llama_token Sampler::apply() {
-		const float* logits = llama_get_logits_ith(context_->get_data(), -1);
+		const float* logits = llama_get_logits_ith(context_.get_data(), -1);
 
-		for (llama_token token_id = 0; token_id < context_->get_n_vocab(); token_id++) {
+		for (llama_token token_id = 0; token_id < context_.get_n_vocab(); token_id++) {
 			candidates_buffer_[token_id] = llama_token_data{ token_id, logits[token_id], 0.0f };
 		}
 
