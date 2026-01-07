@@ -50,6 +50,7 @@ if(LLAMA_SERVER_BUILD_TESTS)
     add_subdirectory(test/test_generate)
     add_subdirectory(test/test_mtmd)
     add_subdirectory(test/test_cache)
+    add_subdirectory(test/test_grammar)
 endif()
 
 set(LIB_SOURCES
@@ -82,6 +83,7 @@ set(LIB_HEADERS
 
     "src/internal/utils.h"
     "src/internal/llama_log.h"
+    "src/internal/llama_converter.h"
     "src/internal/id_chunk.h"
 
     "src/internal/llama_model.h"

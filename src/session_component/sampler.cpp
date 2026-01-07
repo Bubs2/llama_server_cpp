@@ -25,13 +25,19 @@ namespace llama_server::internal {
 
 	void Sampler::set(
 		const GenConfig& gen_config,
-		const common_chat_params& chat_params
+		const Grammar& auto_grammar
 	) {
 		ptr_ = SamplerPtr(llama_sampler_chain_init(llama_sampler_chain_default_params()));
-		if (!chat_params.grammar.empty()) {
-			try { llama_sampler_chain_add(ptr_.get(), get_grammar_sampler(chat_params, context_.get_vocab())); }
+
+		if (!gen_config.grammar.value.empty()) {
+			try { llama_sampler_chain_add(ptr_.get(), get_grammar_sampler(gen_config.grammar, context_.get_vocab())); }
 			catch (const LlamaException& e) { log_warn(e.what()); }
 		}
+		else if (!auto_grammar.value.empty()) {
+			try { llama_sampler_chain_add(ptr_.get(), get_grammar_sampler(auto_grammar, context_.get_vocab())); }
+			catch (const LlamaException& e) { log_warn(e.what()); }
+		}
+
 		llama_sampler_chain_add(ptr_.get(), llama_sampler_init_temp(gen_config.temperature));
 		if (gen_config.top_k != 0) {
 			llama_sampler_chain_add(ptr_.get(), llama_sampler_init_top_k(gen_config.top_k));
@@ -79,11 +85,11 @@ namespace llama_server::internal {
 	}
 
 	// Copy from sampling.cpp
-	llama_sampler* Sampler::get_grammar_sampler(const common_chat_params& params, const llama_vocab* vocab) {
+	llama_sampler* Sampler::get_grammar_sampler(const Grammar& grammar, const llama_vocab* vocab) {
 		struct llama_sampler* grmr;
-		if (params.grammar.compare(0, 11, "%llguidance") == 0) {
+		if (grammar.value.compare(0, 11, "%llguidance") == 0) {
 #ifdef LLAMA_USE_LLGUIDANCE
-			grmr = llama_sampler_init_llg(vocab, "lark", params.grammar.c_str());
+			grmr = llama_sampler_init_llg(vocab, "lark", grammar.value.c_str());
 #else
 			GGML_ABORT("llguidance (cmake -DLLAMA_LLGUIDANCE=ON) is not enabled");
 #endif // LLAMA_USE_LLGUIDANCE
@@ -92,25 +98,25 @@ namespace llama_server::internal {
 			std::vector<std::string> trigger_patterns;
 			std::vector<std::string> patterns_anywhere;
 			std::vector<llama_token> trigger_tokens;
-			for (const auto& trigger : params.grammar_triggers) {
+			for (const auto& trigger : grammar.triggers) {
 				switch (trigger.type) {
-				case COMMON_GRAMMAR_TRIGGER_TYPE_WORD:
+				case GrammarTrigger::WORD:
 				{
 					const auto& word = trigger.value;
 					patterns_anywhere.push_back(regex_escape(word));
 					break;
 				}
-				case COMMON_GRAMMAR_TRIGGER_TYPE_PATTERN:
+				case GrammarTrigger::PATTERN:
 				{
 					patterns_anywhere.push_back(trigger.value);
 					break;
 				}
-				case COMMON_GRAMMAR_TRIGGER_TYPE_PATTERN_FULL:
+				case GrammarTrigger::PATTERN_FULL:
 				{
 					trigger_patterns.push_back(trigger.value);
 					break;
 				}
-				case COMMON_GRAMMAR_TRIGGER_TYPE_TOKEN:
+				case GrammarTrigger::TOKEN:
 				{
 					const auto token = trigger.token;
 					trigger_tokens.push_back(token);
@@ -131,11 +137,11 @@ namespace llama_server::internal {
 				trigger_patterns_c.push_back(regex.c_str());
 			}
 
-			grmr = params.grammar_lazy
-				? llama_sampler_init_grammar_lazy_patterns(vocab, params.grammar.c_str(), "root",
+			grmr = grammar.lazy
+				? llama_sampler_init_grammar_lazy_patterns(vocab, grammar.value.c_str(), "root",
 					trigger_patterns_c.data(), trigger_patterns_c.size(),
 					trigger_tokens.data(), trigger_tokens.size())
-				: llama_sampler_init_grammar(vocab, params.grammar.c_str(), "root");
+				: llama_sampler_init_grammar(vocab, grammar.value.c_str(), "root");
 
 			if (!grmr) {
 				throw LlamaException("Failed to initialize grammar sampler");

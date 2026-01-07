@@ -66,7 +66,7 @@ namespace llama_server::internal {
 		std::vector<common_chat_tool>&& tools,
 		size_t max_tokens
 	) {
-		if (image_chunks_cache_.size() > 10) image_chunks_cache_.clear(); // Temporary simple cache eviction
+		if (image_chunks_cache_.size() > 16) image_chunks_cache_.clear(); // Temporary simple cache eviction
 
 		common_chat_templates_inputs input = prune_with_precache(std::move(head_msgs), std::move(tail_msgs), std::move(tools), max_tokens);
 		chat_params_cache_ = templater_(input);

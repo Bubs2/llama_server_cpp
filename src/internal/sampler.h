@@ -21,7 +21,7 @@ namespace llama_server::internal {
 
 		void set(
 			const GenConfig& gen_config,
-			const common_chat_params& chat_params
+			const Grammar& auto_grammar
 		);
 
 		llama_token apply();
@@ -37,7 +37,7 @@ namespace llama_server::internal {
 
 		std::vector<llama_token_data> candidates_buffer_;
 
-		static llama_sampler* get_grammar_sampler(const common_chat_params& params, const llama_vocab* vocab);
+		static llama_sampler* get_grammar_sampler(const Grammar& grammar, const llama_vocab* vocab);
 	};
 
 }

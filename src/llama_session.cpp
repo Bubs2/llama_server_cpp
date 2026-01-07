@@ -1,6 +1,7 @@
 #include "llama_session.h"
 #include "llama_log.h"
 #include "llama_strategy.h"
+#include "llama_converter.h"
 #include "id_chunk.h"
 #include "llama_model.h"
 #include "llama_context.h"
@@ -104,11 +105,14 @@ namespace llama_server {
 		common_chat_params chat_params = input_encoder_->get_chat_params_cache();
 		log_info(std::format("\n{}", chat_params.prompt));
 
-		sampler_->set(gen_config, chat_params);
+		{
+			Grammar auto_grammar = GrammarConverter::normalize(chat_params);
+			sampler_->set(gen_config, auto_grammar);
+		}
 
 		llama_token next_token = sampler_->apply();
 		if (llama_vocab_is_eog(context_->get_vocab(), next_token)) {
-			log_info("End of generation");
+			log_info("\nEnd of generation");
 			return;
 		}
 
@@ -127,7 +131,7 @@ namespace llama_server {
 			}
 
 			if (llama_vocab_is_eog(context_->get_vocab(), next_token)) {
-				log_info("End of generation");
+				log_info("\nEnd of generation");
 				break;
 			}
 
